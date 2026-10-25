@@ -1,0 +1,2 @@
+Testowy dokument tekstowy.
+Linia druga z polskimi znakami: ą, ę, ś, ł, ż, ź, ć, ń.
