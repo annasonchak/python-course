@@ -55,3 +55,17 @@ try:
     print(f"Created: {result_pdf}")
 except Exception as e:
     print(f"PDF conversion failed or LibreOffice is missing: {e}")
+
+print("\nInvalid JSON Error Handling")
+bad_json_file = Path("bad_test.json")
+bad_json_file.write_text("{ invalid json syntax ...", encoding="utf-8")
+
+try:
+    request_bad_json = ConversionRequest(
+        source=bad_json_file,
+        target_format=".csv",
+        output_dir=output_dir
+    )
+    execute(request_bad_json)
+except Exception as e:
+    print(f"Error: {e}")
