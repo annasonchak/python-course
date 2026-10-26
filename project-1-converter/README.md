@@ -1,199 +1,146 @@
 # Uniwersalny konwerter plików
 
-Aplikacja desktopowa napisana w języku Python z wykorzystaniem biblioteki **Tkinter**. Umożliwia konwersję plików pomiędzy różnymi formatami, a jej modułowa architektura pozwala na łatwe rozszerzanie obsługiwanych formatów.
+Aplikacja desktopowa napisana w języku Python z wykorzystaniem biblioteki Tkinter. Umożliwia bezstratną konwersję plików pomiędzy różnymi formatami, a jej modułowa architektura pozwala na łatwe rozszerzanie obsługiwanych formatów.
 
 Projekt obejmuje trzy grupy konwersji: dane strukturalne, dokumenty tekstowe oraz formaty biurowe. Poprawność działania aplikacji jest weryfikowana za pomocą automatycznych testów jednostkowych i integracyjnych.
 
-## Funkcjonalności
+---
 
-Aplikacja obsługuje następujące kierunki konwersji.
+## Funkcjonalności i Tabela Formatów
+
+Aplikacja obsługuje następujące kierunki konwersji oraz posiada wbudowane ograniczenia zabezpieczające:
 
 ### Grupa A — dane strukturalne
-
-| Format źródłowy | Format docelowy | Opis |
-|---|---|---|
-| CSV | JSON | Konwersja danych tabelarycznych do formatu JSON z zachowaniem nagłówków i kodowania UTF-8. |
-| JSON | CSV | Konwersja danych JSON do formatu tabelarycznego CSV. |
+| Format źródłowy | Format docelowy | Narzędzie / Biblioteka | Znane ograniczenia |
+|---|---|---|---|
+| CSV | JSON | Standardowa biblioteka (csv, json) | Wymaga poprawnego pliku w kodowaniu UTF-8 z nagłówkami tabeli. |
+| JSON | CSV | Standardowa biblioteka (csv, json) | Struktura JSON musi być płaską listą słowników (obiektów). |
 
 ### Grupa B — dokumenty tekstowe
-
-| Format źródłowy | Format docelowy |
-|---|---|
-| TXT | DOCX |
-| DOCX | TXT |
-| TXT | ODT |
-| ODT | TXT |
+| Format źródłowy | Format docelowy | Narzędzie / Biblioteka | Znane ograniczenia |
+|---|---|---|---|
+| TXT | DOCX | python-docx | Przenosi czysty tekst akapitami bez zaawansowanego formatowania stylów. |
+| DOCX | TXT | python-docx | Ekstrahuje wyłącznie tekst z akapitów (pomija osadzone tabele i obrazy). |
+| TXT | ODT | LibreOffice (Headless) | Wymaga poprawnej instalacji pakietu LibreOffice w systemie. |
+| ODT | TXT | LibreOffice (Headless) | Wymaga poprawnej instalacji pakietu LibreOffice w systemie. |
 
 ### Grupa C — formaty biurowe i PDF
+Konwersje w tej grupie są realizowane z wykorzystaniem programu LibreOffice w trybie bez interfejsu graficznego (headless).
 
-Konwersje w tej grupie są realizowane z wykorzystaniem programu LibreOffice w trybie bez interfejsu graficznego (*headless*).
+| Format źródłowy | Format docelowy | Znane ograniczenia |
+|---|---|---|
+| TXT / DOCX / ODT | PDF | Wymaga zainstalowanego LibreOffice i dostępu do niego w zmiennej PATH. |
+| DOCX ⇄ ODT | ODT / DOCX | Zachowuje strukturę dokumentu, złożone makra lub niestandardowe czcionki mogą być pominięte. |
 
-| Format źródłowy | Format docelowy |
-|---|---|
-| TXT | PDF |
-| DOCX | PDF |
-| DOCX | ODT |
-| ODT | DOCX |
-| ODT | PDF |
+---
 
 ## Wymagania systemowe
 
 Do uruchomienia aplikacji wymagane są:
+- Python 3+
+- Biblioteka Tkinter (zazwyczaj domyślnie instalowana z Pythonem na Windowsie; na Linuksie wymaga pakietu systemowego python3-tk).
+- Pakiet LibreOffice — wymagany wyłącznie do konwersji formatów biurowych i PDF (Grupa C). Aplikacja automatycznie wykrywa jego obecność w systemie (shutil.which oraz domyślne ścieżki).
 
-- Python 3;
-- biblioteka Tkinter;
-- pakiety Python wymienione w pliku `requirements.txt`;
-- LibreOffice — wymagany do konwersji wykorzystujących jego mechanizm eksportu, w szczególności do formatów PDF i ODT.
+### Instalacja LibreOffice oraz zależności systemowych
 
-### Instalacja LibreOffice
+* **Linux (Ubuntu, Debian, Linux Mint):**
+  ```bash
+  sudo apt update
+  sudo apt install libreoffice python3-tk python3-venv
+  ```
 
-**Linux (Ubuntu, Debian, Linux Mint):**
+* **Windows i macOS:**
+  Pobierz i zainstaluj stabilną wersję LibreOffice (https://www.libreoffice.org/). Instalator domyślnie dodaje aplikację do zmiennych środowiskowych systemowych (PATH).
 
+---
+
+## Instalacja i uruchomienie (Krok po kroku)
+
+Zaleca się bezwzględne korzystanie z wirtualnego środowiska Python (venv), aby odizolować zależności projektu.
+
+### Dla systemu Linux / macOS:
 ```bash
-sudo apt update
-sudo apt install libreoffice python3-tk python3-venv
+# 1. Przejdź do katalogu projektu
+cd project-1-converter
+
+# 2. Utwórz wirtualne środowisko
+python3 -m venv venv
+
+# 3. Aktywuj środowisko
+source venv/bin/activate
+
+# 4. Zainstaluj wymagane pakiety Pythona
+pip install -r requirements.txt
+
+# 5. Uruchom aplikację graficzną
+python3 gui.py
+```
+*Uwaga: Jeżeli 'python3 gui.py' wywołuje błędy - należy użyć 'python gui.py'*
+
+### Dla systemu Windows (PowerShell):
+```powershell
+# 1. Przejdź do katalogu projektu
+cd project-1-converter
+
+# 2. Utwórz wirtualne środowisko
+python -m venv venv
+
+# 3. Aktywuj środowisko (PowerShell)
+.\venv\Scripts\Activate.ps1
+
+# 4. Zainstaluj wymagane pakiety Pythona
+pip install -r requirements.txt
+
+# 5. Uruchom aplikację graficzną
+python gui.py
 ```
 
-**Windows i macOS:**
+*Uwaga: Jeżeli w systemie Windows występuje problem z polityką wykonywania skryptów w PowerShell, wykonaj jednorazowo w terminalu jako Administrator: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser.*
 
-Pobierz i zainstaluj LibreOffice z oficjalnej strony:
+---
 
-https://www.libreoffice.org/
+## Testy automatyczne i Raport z testów
 
-Upewnij się, że aplikacja jest dostępna w systemie. Jeśli polecenie `libreoffice` nie jest rozpoznawane, może być konieczne skonfigurowanie ścieżki do programu.
+Projekt zawiera automatyczny zestaw testów jednostkowych i integracyjnych (pytest), który w pełni pokrywa minimalną macierz testów:
+1. **Poprawne pliki:** Poprawna konwersja danych (np. CSV do JSON) z uwzględnieniem polskich znaków (kodowanie UTF-8).
+2. **Błędne pliki:** Obsługa uszkodzonych struktur (np. plik sample_bad.json) zapobiegająca awarii programu.
+3. **Nieobsługiwane pary:** Weryfikacja odrzucania niepoprawnych kombinacji rozszerzeń przez metodę validate().
+4. **Brak zależności:** Kontrola zachowania systemu w przypadku braku LibreOffice (zgłoszenie RuntimeError).
+5. **Konflikt nazw i nadpisywanie:** Sprawdzenie istnienia pliku docelowego zabezpieczone oknem dialogowym w GUI.
 
-## Instalacja i uruchomienie
+### Uruchamianie testów:
+Upewnij się, że wirtualne środowisko jest aktywowane, a następnie wykonaj w katalogu projektu:
+```bash
+pytest
+```
+Wszystkie testy powinny zakończyć się statusem PASSED.
 
-Zaleca się korzystanie z wirtualnego środowiska Python (`venv`), aby odizolować zależności projektu od pozostałych pakietów zainstalowanych w systemie.
-
-### Linux i macOS
-
-1. Przejdź do katalogu projektu:
-
-   ```bash
-   cd project-1-converter
-   ```
-
-2. Utwórz wirtualne środowisko:
-
-   ```bash
-   python3 -m venv venv
-   ```
-
-3. Aktywuj środowisko:
-
-   ```bash
-   source venv/bin/activate
-   ```
-
-4. Zainstaluj wymagane pakiety:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-5. Uruchom aplikację:
-
-   ```bash
-   python gui.py
-   ```
-
-### Windows
-
-1. Otwórz PowerShell lub wiersz polecenia i przejdź do katalogu projektu:
-
-   ```powershell
-   cd project-1-converter
-   ```
-
-2. Utwórz wirtualne środowisko:
-
-   ```powershell
-   python -m venv venv
-   ```
-
-3. Aktywuj środowisko.
-
-   **PowerShell:**
-
-   ```powershell
-   .\venv\Scripts\Activate.ps1
-   ```
-
-   **CMD:**
-
-   ```bat
-   venv\Scripts\activate.bat
-   ```
-
-4. Zainstaluj wymagane pakiety:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-5. Uruchom aplikację:
-
-   ```bash
-   python gui.py
-   ```
-
-## Testy automatyczne
-
-Projekt zawiera testy jednostkowe i integracyjne sprawdzające poprawność działania konwerterów oraz obsługę typowych sytuacji wyjątkowych.
-
-Testy obejmują między innymi:
-
-- konwersję plików pomiędzy obsługiwanymi formatami;
-- obsługę nieprawidłowych danych JSON;
-- zachowanie polskich znaków i kodowania UTF-8;
-- obsługę brakujących narzędzi systemowych;
-- weryfikację zachowania aplikacji w przypadku błędów konwersji.
-
-### Uruchamianie testów
-
-1. Aktywuj wirtualne środowisko.
-2. Upewnij się, że wymagane zależności zostały zainstalowane.
-3. W katalogu głównym projektu wykonaj polecenie:
-
-   ```bash
-   pytest
-   ```
-
-Wyniki testów zostaną wyświetlone w terminalu.
+---
 
 ## Struktura projektu
 
 ```text
 project-1-converter/
-├── converter.py
-├── gui.py
-├── conftest.py
-├── requirements.txt
+├── converter.py         # Logika biznesowa, rejestr konwerterów na dekoratorach i walidacja
+├── gui.py               # Graficzny interfejs użytkownika Tkinter (wielowątkowy, non-blocking)
+├── conftest.py          # Konfiguracja środowiska testowego pytest
+├── requirements.txt     # Zewnętrzne zależności Pythona
 ├── tests/
+│   └── test_converter.py# Zautomatyzowane testy jednostkowe i integracyjne
 └── data/
-    ├── sample.csv
-    ├── sample.json
-    ├── sample.txt
-    └── sample_bad.json
+    ├── sample.csv       # Przykładowe dane CSV
+    ├── sample.json      # Przykładowe dane JSON
+    ├── sample.txt       # Przykładowy tekst
+    └── sample_bad.json  # Celowo uszkodzony plik JSON do testów odporności
 ```
 
-### Opis plików i katalogów
+---
 
-| Plik lub katalog | Opis |
-|---|---|
-| `converter.py` | Implementacja logiki konwersji oraz rejestru konwerterów wykorzystującego dekoratory. |
-| `gui.py` | Graficzny interfejs użytkownika oparty na bibliotece Tkinter. |
-| `conftest.py` | Konfiguracja środowiska testowego dla pytest. |
-| `tests/` | Testy jednostkowe i integracyjne. |
-| `data/` | Przykładowe pliki wykorzystywane podczas testowania konwersji. |
-| `requirements.txt` | Lista zewnętrznych zależności Python. |
+## Źródła, Biblioteki i Narzędzia AI
+* **Wykorzystane biblioteki:** python-docx, tkinter, pytest, pathlib, subprocess, csv, json.
+* **Narzędzia AI:** Projekt realizowany przy wsparciu modeli językowych AI (Google Gemini) w zakresie optymalizacji wielowątkowości GUI oraz generowania przypadków testowych.
 
-## Architektura
+---
 
-Aplikacja została podzielona na dwie główne warstwy:
-
-- **Warstwa logiki (`converter.py`)** — odpowiada za rejestrowanie konwerterów, wybór odpowiedniej operacji i przetwarzanie plików.
-- **Warstwa interfejsu (`gui.py`)** — odpowiada za interakcję z użytkownikiem i udostępnia funkcje konwersji za pomocą graficznego interfejsu.
-
-Taki podział ułatwia testowanie logiki niezależnie od interfejsu graficznego oraz dodawanie kolejnych konwerterów bez konieczności przebudowy całej aplikacji.
+## Autorzy
+* **Student:** Anna Sonchak
