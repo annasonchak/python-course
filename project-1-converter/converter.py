@@ -4,6 +4,7 @@ from collections.abc import Callable
 import csv
 import json
 import subprocess
+import shutil
 from docx import Document
 
 Converter = Callable[[Path, Path], Path]
@@ -65,6 +66,7 @@ def json_to_csv(source: Path, output_dir: Path) -> Path:
     return target
 
 def _libreoffice_convert(source: Path, output_dir: Path, target_ext: str) -> Path:
+    exe_path = find_libreoffice_executable()
     command = [
         "libreoffice",
         "--headless",
@@ -132,3 +134,17 @@ def odt_to_docx(source: Path, output_dir: Path) -> Path:
 @converter(".odt", ".pdf")
 def odt_to_pdf(source: Path, output_dir: Path) -> Path:
     return _libreoffice_convert(source, output_dir, "pdf")
+
+def find_libreoffice_executable() -> str:
+    cmd = shutil.which("libreoffice") or shutil.which("soffice")
+    if cmd:
+        return cmd
+    
+    windows_default = r"C:\Program Files\LibreOffice\program\soffice.exe"
+    if Path(windows_default).exists():
+        return windows_default
+        
+    raise RuntimeError(
+        "Nie znaleziono pakietu LibreOffice w systemie. "
+        "Zainstaluj LibreOffice i dodaj go do zmiennej środowiskowej PATH."
+    )

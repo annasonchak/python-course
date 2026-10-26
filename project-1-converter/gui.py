@@ -1,5 +1,6 @@
 from pathlib import Path
 import tkinter as tk
+import threading
 from tkinter import filedialog, messagebox, ttk
 from converter import ConversionRequest, available_targets, execute
 
@@ -50,7 +51,7 @@ class ConverterApp:
         frame_action = ttk.Frame(self.root, padding=10)
         frame_action.pack(fill="x", padx=10, pady=10)
         
-        self.btn_convert = ttk.Button(frame_action, text="Convert", command=self.convert, state="disabled")
+        self.btn_convert = ttk.Button(frame_action, text="Convert", command=self.on_convert_click, state="disabled")
         self.btn_convert.pack(fill="x", padx=5)
 
         # Log
@@ -88,7 +89,11 @@ class ConverterApp:
         self.txt_log.see("end")
         self.txt_log.config(state="disabled")
 
-    def convert(self):
+    def on_convert_click(self):
+        thread = threading.Thread(target=self._run_conversion_process, daemon=True)
+        thread.start()
+
+    def _run_conversion_process(self):
         if not self.source_path:
             return
         
