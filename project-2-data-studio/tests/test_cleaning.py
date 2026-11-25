@@ -6,6 +6,8 @@ from studio.cleaning import (
     drop_rows_with_missing,
     fill_missing_with_constant,
     fill_missing_with_statistic,
+    find_out_of_range,
+    report_out_of_range,
 )
 from studio.errors import ValidationError
 from studio.session import DataSession
@@ -227,3 +229,79 @@ def test_unknown_strategy_raises_validation_error():
 
     with pytest.raises(ValidationError, match="Nieznana strategia"):
         fill_missing_with_statistic(session, ["score"], "average")
+
+def make_frame_for_range() -> pd.DataFrame:
+    return pd.DataFrame({
+        "id": [1, 2, 3, 4],
+        "age": [10, -5, 20, 1000],
+        "city": ["A", "B", "C", "D"],
+    })
+
+
+def test_find_out_of_range_detects_both_sides():
+    session = DataSession(make_frame_for_range())
+
+    mask = find_out_of_range(session, "age", 0, 100)
+
+    assert mask.tolist() == [False, True, False, True]
+
+
+def test_find_out_of_range_with_only_minimum():
+    session = DataSession(make_frame_for_range())
+
+    mask = find_out_of_range(session, "age", 0, None)
+
+    assert mask.tolist() == [False, True, False, False]
+
+
+def test_find_out_of_range_does_not_change_data():
+    session = DataSession(make_frame_for_range())
+
+    find_out_of_range(session, "age", 0, 100)
+
+    assert session.current["age"].tolist() == [10, -5, 20, 1000]
+    assert len(session.audit_log) == 0
+
+
+def test_find_out_of_range_ignores_missing_values():
+    frame = pd.DataFrame({"age": [10.0, None, 200.0]})
+    session = DataSession(frame)
+
+    mask = find_out_of_range(session, "age", 0, 100)
+
+    assert mask.tolist() == [False, False, True]
+
+
+def test_report_out_of_range_counts_and_logs_without_changes():
+    session = DataSession(make_frame_for_range())
+
+    found_count = report_out_of_range(session, "age", 0, 100)
+
+    assert found_count == 2
+    assert session.current["age"].tolist() == [10, -5, 20, 1000]
+    last_entry = session.audit_log[-1]
+    assert last_entry.operation == "check_range_rule"
+    assert last_entry.affected == 0
+    assert last_entry.rows_before == 4
+    assert last_entry.rows_after == 4
+
+
+def test_range_with_minimum_greater_than_maximum_raises():
+    session = DataSession(make_frame_for_range())
+
+    with pytest.raises(ValidationError, match="większe niż maksimum"):
+        find_out_of_range(session, "age", 100, 0)
+
+
+def test_range_without_any_limit_raises():
+    session = DataSession(make_frame_for_range())
+
+    with pytest.raises(ValidationError, match="Nie podano"):
+        find_out_of_range(session, "age", None, None)
+
+
+def test_range_on_text_column_raises():
+    session = DataSession(make_frame_for_range())
+
+    with pytest.raises(ValidationError, match="nie jest liczbowa"):
+        find_out_of_range(session, "city", 0, 100)
