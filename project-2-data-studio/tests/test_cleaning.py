@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from studio.cleaning import (
+    apply_range_rule,
     drop_exact_duplicates,
     drop_rows_with_missing,
     fill_missing_with_constant,
@@ -305,3 +306,65 @@ def test_range_on_text_column_raises():
 
     with pytest.raises(ValidationError, match="nie jest liczbowa"):
         find_out_of_range(session, "city", 0, 100)
+
+def test_apply_range_rule_to_missing_replaces_only_bad_values():
+    session = DataSession(make_frame_for_range())
+
+    affected_count = apply_range_rule(session, "age", 0, 100, "to_missing")
+
+    assert affected_count == 2
+    assert len(session.current) == 4
+    assert session.current["age"].isna().tolist() == [False, True, False, True]
+    assert session.current.loc[0, "age"] == 10
+    assert session.current.loc[2, "age"] == 20
+
+
+def test_apply_range_rule_drop_rows_removes_bad_rows():
+    session = DataSession(make_frame_for_range())
+
+    affected_count = apply_range_rule(session, "age", 0, 100, "drop_rows")
+
+    assert affected_count == 2
+    assert session.current["id"].tolist() == [1, 3]
+
+
+def test_apply_range_rule_does_not_touch_other_columns_or_raw():
+    session = DataSession(make_frame_for_range())
+
+    apply_range_rule(session, "age", 0, 100, "to_missing")
+
+    assert session.current["city"].tolist() == ["A", "B", "C", "D"]
+    assert session.raw["age"].tolist() == [10, -5, 20, 1000]
+
+
+def test_apply_range_rule_writes_audit_entry():
+    session = DataSession(make_frame_for_range())
+
+    apply_range_rule(session, "age", 0, 100, "drop_rows")
+
+    last_entry = session.audit_log[-1]
+    assert last_entry.operation == "apply_range_rule"
+    assert last_entry.params["action"] == "drop_rows"
+    assert last_entry.rows_before == 4
+    assert last_entry.rows_after == 2
+    assert last_entry.affected == 2
+
+
+def test_apply_range_rule_with_unknown_action_raises_and_changes_nothing():
+    session = DataSession(make_frame_for_range())
+
+    with pytest.raises(ValidationError, match="Nieznana akcja"):
+        apply_range_rule(session, "age", 0, 100, "delete_everything")
+
+    assert session.current["age"].tolist() == [10, -5, 20, 1000]
+    assert len(session.audit_log) == 0
+
+
+def test_apply_range_rule_with_invalid_range_raises_and_changes_nothing():
+    session = DataSession(make_frame_for_range())
+
+    with pytest.raises(ValidationError, match="większe niż maksimum"):
+        apply_range_rule(session, "age", 100, 0, "drop_rows")
+
+    assert len(session.current) == 4
+    assert len(session.audit_log) == 0
