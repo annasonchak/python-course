@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pandas as pd
-
+from dataclasses import dataclass
 
 def get_shape(frame: pd.DataFrame) -> tuple[int, int]:
     """Zwraca (liczba rekordów, liczba kolumn)"""
@@ -52,3 +52,26 @@ def build_numeric_statistics(frame: pd.DataFrame) -> pd.DataFrame:
     statistics = statistics.reset_index()
     statistics = statistics.rename(columns={"index": "column"})
     return statistics
+
+@dataclass
+class DataProfile:
+    """Pełny profil danych: wszystkie sześć wymaganych elementów"""
+
+    row_count: int
+    column_count: int
+    columns: pd.DataFrame # typy, braki, unikalne dla każdej kolumny
+    statistics: pd.DataFrame # statystyki opisowe kolumn liczbowych
+    duplicate_count: int
+
+
+def build_profile(frame: pd.DataFrame) -> DataProfile:
+    """Zbiera cały profil danych w jeden obiekt"""
+    row_count, column_count = get_shape(frame)
+
+    return DataProfile(
+        row_count=row_count,
+        column_count=column_count,
+        columns=build_column_profile(frame),
+        statistics=build_numeric_statistics(frame),
+        duplicate_count=count_exact_duplicates(frame),
+    )
