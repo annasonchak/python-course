@@ -5,6 +5,7 @@ from studio.cleaning import (
     drop_exact_duplicates,
     drop_rows_with_missing,
     fill_missing_with_constant,
+    fill_missing_with_statistic,
 )
 from studio.errors import ValidationError
 from studio.session import DataSession
@@ -154,3 +155,75 @@ def test_cleaning_with_unknown_column_raises_validation_error():
 
     with pytest.raises(ValidationError, match="nie istnieje"):
         fill_missing_with_constant(session, ["nie_ma_takiej"], "0")
+
+def make_frame_for_statistics() -> pd.DataFrame:
+    return pd.DataFrame({
+        "id": [1, 2, 3, 4, 5],
+        "score": [10.0, 20.0, None, 30.0, 1000.0],
+        "city": ["Opole", "Opole", None, "Łódź", "Opole"],
+    })
+
+
+def test_fill_missing_with_mean():
+    session = DataSession(make_frame_for_statistics())
+
+    # ma tu wybrać 265.0
+    filled_count = fill_missing_with_statistic(session, ["score"], "mean")
+
+    assert filled_count == 1
+    assert session.current["score"].tolist() == [10.0, 20.0, 265.0, 30.0, 1000.0]
+
+
+def test_fill_missing_with_median_is_resistant_to_outlier():
+    session = DataSession(make_frame_for_statistics())
+
+    fill_missing_with_statistic(session, ["score"], "median")
+
+    assert session.current.loc[2, "score"] == 25.0
+
+
+def test_fill_missing_with_mode_in_text_column():
+    session = DataSession(make_frame_for_statistics())
+
+    fill_missing_with_statistic(session, ["city"], "mode")
+
+    assert session.current.loc[2, "city"] == "Opole"
+
+
+def test_fill_missing_with_statistic_does_not_touch_other_columns():
+    session = DataSession(make_frame_for_statistics())
+
+    fill_missing_with_statistic(session, ["score"], "mean")
+
+    assert session.current["city"].isna().sum() == 1
+    assert session.raw["score"].isna().sum() == 1
+
+
+def test_fill_missing_with_statistic_writes_audit_entry():
+    session = DataSession(make_frame_for_statistics())
+
+    fill_missing_with_statistic(session, ["score", "city"], "mode")
+
+    last_entry = session.audit_log[-1]
+    assert last_entry.operation == "fill_missing_with_statistic"
+    assert last_entry.params["strategy"] == "mode"
+    assert last_entry.rows_before == 5
+    assert last_entry.rows_after == 5
+    assert last_entry.affected == 2
+
+
+def test_mean_on_text_column_raises_and_changes_nothing():
+    session = DataSession(make_frame_for_statistics())
+
+    with pytest.raises(ValidationError, match="wymaga kolumny liczbowej"):
+        fill_missing_with_statistic(session, ["city"], "mean")
+
+    assert session.current["city"].isna().sum() == 1
+    assert len(session.audit_log) == 0
+
+
+def test_unknown_strategy_raises_validation_error():
+    session = DataSession(make_frame_for_statistics())
+
+    with pytest.raises(ValidationError, match="Nieznana strategia"):
+        fill_missing_with_statistic(session, ["score"], "average")
