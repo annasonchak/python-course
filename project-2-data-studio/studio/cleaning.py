@@ -195,7 +195,7 @@ def report_out_of_range(session: DataSession,column_name: str, minimum: float | 
 
     session.record(
         operation="check_range_rule",
-        params={"column": column_name, "minimum": minimum, "maximum": maximum},
+        params={"column": column_name, "minimum": minimum, "maximum": maximum, "found": found_count},
         rows_before=row_count,
         affected=0,
     )
