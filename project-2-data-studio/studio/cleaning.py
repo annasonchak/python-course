@@ -94,3 +94,62 @@ def fill_missing_with_constant(session: DataSession, columns: list[str], value: 
         affected=filled_count,
     )
     return filled_count
+
+def fill_missing_with_statistic(session: DataSession, columns: list[str], strategy: str) -> int:
+    """Wypełnia braki średnią, medianą albo najczęstszą wartością (mean, median, mode)."""
+    allowed_strategies = ["mean", "median", "mode"]
+    if strategy not in allowed_strategies:
+        raise ValidationError(
+            f"Nieznana strategia '{strategy}'. Wybierz jedną z: mean, median, mode."
+        )
+
+    validate_columns(session, columns)
+    rows_before = len(session.current)
+
+    new_frame = session.current.copy()
+    filled_count = 0
+
+    for column_name in columns:
+        column = new_frame[column_name]
+        missing_count = int(column.isna().sum())
+
+        if missing_count == 0:
+            continue
+
+        if strategy in ["mean", "median"]:
+            if not pd.api.types.is_numeric_dtype(column):
+                raise ValidationError(
+                    f"Strategia '{strategy}' wymaga kolumny liczbowej, a '{column_name}' "
+                    "jest tekstowa. Wybierz 'mode' albo inną kolumnę."
+                )
+            if strategy == "mean":
+                fill_value = column.mean()
+            else:
+                fill_value = column.median()
+        else:
+            modes = column.mode(dropna=True)
+            if len(modes) == 0:
+                raise ValidationError(
+                    f"Kolumna '{column_name}' nie ma żadnych wartości, "
+                    "więc nie da się wyliczyć wartości najczęstszej."
+                )
+            fill_value = modes.iloc[0]
+
+        if pd.isna(fill_value):
+            raise ValidationError(
+                f"Kolumna '{column_name}' nie ma żadnych wartości, "
+                "więc nie da się wyliczyć wartości zastępczej."
+            )
+
+        new_frame[column_name] = column.fillna(fill_value)
+        filled_count += missing_count
+
+    session.current = new_frame
+
+    session.record(
+        operation="fill_missing_with_statistic",
+        params={"columns": columns, "strategy": strategy},
+        rows_before=rows_before,
+        affected=filled_count,
+    )
+    return filled_count
