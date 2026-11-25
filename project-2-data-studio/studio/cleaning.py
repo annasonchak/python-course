@@ -234,3 +234,91 @@ def apply_range_rule(session: DataSession,column_name: str,minimum: float | None
         affected=affected_count,
     )
     return affected_count
+
+def calculate_iqr_bounds(session: DataSession,column_name: str,factor: float = 1.5) -> tuple[float, float] | None:
+    """Zwraca (dolna granica, górna granica) metodą IQR albo None, gdy IQR jest zerowy."""
+    validate_columns(session, [column_name])
+
+    if factor <= 0:
+        raise ValidationError(
+            f"Współczynnik IQR musi być dodatni, a podano {factor}. Użyj na przykład 1.5."
+        )
+
+    column = session.current[column_name]
+    if not pd.api.types.is_numeric_dtype(column):
+        raise ValidationError(
+            f"Kolumna '{column_name}' nie jest liczbowa, więc nie można wykryć wartości "
+            "odstających. Wybierz kolumnę liczbową."
+        )
+
+    first_quartile = column.quantile(0.25)
+    third_quartile = column.quantile(0.75)
+    iqr = third_quartile - first_quartile
+
+    if pd.isna(iqr) or iqr == 0:
+        return None
+
+    lower_bound = first_quartile - factor * iqr
+    upper_bound = third_quartile + factor * iqr
+    return float(lower_bound), float(upper_bound)
+
+
+def find_outliers_iqr(session: DataSession,column_name: str,factor: float = 1.5) -> pd.Series:
+    """Zwraca maskę True/False: które rekordy są odstające. Niczego nie zmienia."""
+    bounds = calculate_iqr_bounds(session, column_name, factor)
+
+    if bounds is None:
+        return pd.Series(False, index=session.current.index)
+
+    lower_bound, upper_bound = bounds
+    column = session.current[column_name]
+    return (column < lower_bound) | (column > upper_bound)
+
+
+def handle_outliers(session: DataSession,column_name: str,action: str,factor: float = 1.5) -> int:
+    """Stosuje decyzję użytkownika wobec odstających (flag, clip, drop, keep)."""
+    allowed_actions = ["flag", "clip", "drop", "keep"]
+    if action not in allowed_actions:
+        raise ValidationError(
+            f"Nieznana akcja '{action}'. Wybierz jedną z: flag, clip, drop, keep."
+        )
+
+    bounds = calculate_iqr_bounds(session, column_name, factor)
+    outlier_mask = find_outliers_iqr(session, column_name, factor)
+    found_count = int(outlier_mask.sum())
+    rows_before = len(session.current)
+
+    new_frame = session.current.copy()
+    affected_count = 0
+
+    if action == "flag":
+        flag_column_name = f"{column_name}_outlier"
+        new_frame[flag_column_name] = outlier_mask
+        affected_count = found_count
+    elif action == "clip":
+        if bounds is not None:
+            lower_bound, upper_bound = bounds
+            new_frame[column_name] = new_frame[column_name].clip(
+                lower=lower_bound, upper=upper_bound
+            )
+            affected_count = found_count
+    elif action == "drop":
+        new_frame = new_frame[~outlier_mask].copy()
+        affected_count = found_count
+
+    session.current = new_frame
+
+    session.record(
+        operation="handle_outliers",
+        params={
+            "column": column_name,
+            "method": "IQR",
+            "factor": factor,
+            "bounds": bounds,
+            "action": action,
+            "found": found_count,
+        },
+        rows_before=rows_before,
+        affected=affected_count,
+    )
+    return found_count
