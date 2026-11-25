@@ -200,3 +200,37 @@ def report_out_of_range(session: DataSession,column_name: str, minimum: float | 
         affected=0,
     )
     return found_count
+
+def apply_range_rule(session: DataSession,column_name: str,minimum: float | None, maximum: float | None,action: str) -> int:
+    """Stosuje decyzję użytkownika wobec wartości poza zakresem (to_missing albo drop_rows)."""
+    allowed_actions = ["to_missing", "drop_rows"]
+    if action not in allowed_actions:
+        raise ValidationError(
+            f"Nieznana akcja '{action}'. Wybierz jedną z: to_missing, drop_rows."
+        )
+
+    outside_mask = find_out_of_range(session, column_name, minimum, maximum)
+    affected_count = int(outside_mask.sum())
+    rows_before = len(session.current)
+
+    new_frame = session.current.copy()
+
+    if action == "to_missing":
+        new_frame.loc[outside_mask, column_name] = float("nan")
+    else:
+        new_frame = new_frame[~outside_mask].copy()
+
+    session.current = new_frame
+
+    session.record(
+        operation="apply_range_rule",
+        params={
+            "column": column_name,
+            "minimum": minimum,
+            "maximum": maximum,
+            "action": action,
+        },
+        rows_before=rows_before,
+        affected=affected_count,
+    )
+    return affected_count
