@@ -1,13 +1,18 @@
 import pandas as pd
+from pathlib import Path
 
 from studio.profiling import build_column_profile, get_shape
 
 from studio.profiling import (
     build_column_profile,
     build_numeric_statistics,
+    build_profile,
     count_exact_duplicates,
     get_shape,
 )
+from studio.session import DataSession
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 def make_frame() -> pd.DataFrame:
     return pd.DataFrame({
@@ -80,3 +85,25 @@ def test_numeric_statistics_values_are_correct():
 def test_numeric_statistics_is_empty_when_no_numeric_columns():
     frame = pd.DataFrame({"city": ["A", "B"]})
     assert build_numeric_statistics(frame).empty
+
+def test_build_profile_on_missing_and_duplicates_file():
+    session = DataSession.from_csv(DATA_DIR / "test_03_braki_duplikaty.csv")
+    profile = build_profile(session.raw)
+
+    assert profile.row_count == 5
+    assert profile.column_count == 3
+    assert profile.duplicate_count == 1
+
+    value_row = profile.columns[profile.columns["column"] == "value"].iloc[0]
+    group_row = profile.columns[profile.columns["column"] == "group"].iloc[0]
+    assert value_row["missing"] == 2
+    assert group_row["missing"] == 1
+
+
+def test_build_profile_shows_extreme_values_in_statistics():
+    session = DataSession.from_csv(DATA_DIR / "test_04_zakres_outlier.csv")
+    profile = build_profile(session.raw)
+
+    statistics = profile.statistics.set_index("column")
+    assert statistics.loc["HouseAge", "min"] == -5
+    assert statistics.loc["AveRooms", "max"] == 1000
