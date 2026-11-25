@@ -34,3 +34,21 @@ def build_column_profile(frame: pd.DataFrame) -> pd.DataFrame:
         })
 
     return pd.DataFrame(profile_rows)
+
+def count_exact_duplicates(frame: pd.DataFrame) -> int:
+    """Zwraca liczbę rekordów, które są pełnymi duplikatami"""
+    duplicate_flags = frame.duplicated(keep="first")
+    return int(duplicate_flags.sum())
+
+
+def build_numeric_statistics(frame: pd.DataFrame) -> pd.DataFrame:
+    """Zwraca statystyki opisowe tylko dla kolumn liczbowych"""
+    numeric_columns = frame.select_dtypes(include="number")
+
+    if len(numeric_columns.columns) == 0:
+        return pd.DataFrame()
+
+    statistics = numeric_columns.describe().transpose()
+    statistics = statistics.reset_index()
+    statistics = statistics.rename(columns={"index": "column"})
+    return statistics
