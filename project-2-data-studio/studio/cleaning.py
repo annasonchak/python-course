@@ -153,3 +153,50 @@ def fill_missing_with_statistic(session: DataSession, columns: list[str], strate
         affected=filled_count,
     )
     return filled_count
+
+def find_out_of_range(session: DataSession,column_name: str,minimum: float | None,maximum: float | None) -> pd.Series:
+    """Zwraca maskę true/false: które rekordy leżą poza zakresem"""
+    validate_columns(session, [column_name])
+
+    if minimum is None and maximum is None:
+        raise ValidationError(
+            "Nie podano żadnej granicy zakresu. Wpisz minimum, maksimum albo oba."
+        )
+
+    if minimum is not None and maximum is not None and minimum > maximum:
+        raise ValidationError(
+            f"Minimum ({minimum}) jest większe niż maksimum ({maximum}). "
+            "Zamień wartości miejscami."
+        )
+
+    column = session.current[column_name]
+    if not pd.api.types.is_numeric_dtype(column):
+        raise ValidationError(
+            f"Kolumna '{column_name}' nie jest liczbowa, więc nie można sprawdzić zakresu. "
+            "Wybierz kolumnę liczbową."
+        )
+
+    outside_mask = pd.Series(False, index=session.current.index)
+
+    if minimum is not None:
+        outside_mask = outside_mask | (column < minimum)
+
+    if maximum is not None:
+        outside_mask = outside_mask | (column > maximum)
+
+    return outside_mask
+
+
+def report_out_of_range(session: DataSession,column_name: str, minimum: float | None, maximum: float | None) -> int:
+    """Liczy rekordy poza zakresem i zapisuje regułę w dzienniku"""
+    outside_mask = find_out_of_range(session, column_name, minimum, maximum)
+    found_count = int(outside_mask.sum())
+    row_count = len(session.current)
+
+    session.record(
+        operation="check_range_rule",
+        params={"column": column_name, "minimum": minimum, "maximum": maximum},
+        rows_before=row_count,
+        affected=0,
+    )
+    return found_count
