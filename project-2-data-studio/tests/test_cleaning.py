@@ -8,6 +8,8 @@ from studio.cleaning import (
     fill_missing_with_constant,
     fill_missing_with_statistic,
     find_out_of_range,
+    find_outliers_iqr,
+    handle_outliers,
     report_out_of_range,
 )
 from studio.errors import ValidationError
@@ -368,3 +370,116 @@ def test_apply_range_rule_with_invalid_range_raises_and_changes_nothing():
 
     assert len(session.current) == 4
     assert len(session.audit_log) == 0
+
+def make_frame_for_outliers() -> pd.DataFrame:
+    # Q1 = 11.75, Q3 = 15.25, IQR = 3.5, granice: 6.5 i 20.5. Odstająca jest tylko 1000.
+    return pd.DataFrame({
+        "id": [1, 2, 3, 4, 5, 6, 7, 8],
+        "value": [10, 11, 12, 13, 14, 15, 16, 1000],
+        "label": ["a", "b", "c", "d", "e", "f", "g", "h"],
+    })
+
+
+def test_find_outliers_iqr_detects_only_extreme_value():
+    session = DataSession(make_frame_for_outliers())
+
+    mask = find_outliers_iqr(session, "value")
+
+    assert mask.tolist() == [False, False, False, False, False, False, False, True]
+
+
+def test_find_outliers_iqr_does_not_change_data_or_log():
+    session = DataSession(make_frame_for_outliers())
+
+    find_outliers_iqr(session, "value")
+
+    assert session.current["value"].tolist() == [10, 11, 12, 13, 14, 15, 16, 1000]
+    assert len(session.audit_log) == 0
+
+
+def test_find_outliers_iqr_on_constant_column_finds_nothing():
+    session = DataSession(pd.DataFrame({"value": [5, 5, 5, 5]}))
+
+    mask = find_outliers_iqr(session, "value")
+
+    assert mask.sum() == 0
+
+
+def test_handle_outliers_flag_adds_column_and_keeps_values():
+    session = DataSession(make_frame_for_outliers())
+
+    found_count = handle_outliers(session, "value", "flag")
+
+    assert found_count == 1
+    assert session.current["value"].tolist() == [10, 11, 12, 13, 14, 15, 16, 1000]
+    assert bool(session.current["value_outlier"].iloc[-1]) is True
+    assert session.current["value_outlier"].sum() == 1
+
+
+def test_handle_outliers_clip_limits_value_to_upper_bound():
+    session = DataSession(make_frame_for_outliers())
+
+    handle_outliers(session, "value", "clip")
+
+    assert len(session.current) == 8
+    assert session.current["value"].iloc[-1] == 20.5
+    assert session.current["value"].iloc[0] == 10
+
+
+def test_handle_outliers_drop_removes_rows():
+    session = DataSession(make_frame_for_outliers())
+
+    handle_outliers(session, "value", "drop")
+
+    assert session.current["id"].tolist() == [1, 2, 3, 4, 5, 6, 7]
+    assert len(session.raw) == 8
+
+
+def test_handle_outliers_keep_changes_nothing_but_logs_rule():
+    session = DataSession(make_frame_for_outliers())
+
+    found_count = handle_outliers(session, "value", "keep")
+
+    assert found_count == 1
+    assert session.current["value"].tolist() == [10, 11, 12, 13, 14, 15, 16, 1000]
+    last_entry = session.audit_log[-1]
+    assert last_entry.operation == "handle_outliers"
+    assert last_entry.affected == 0
+    assert last_entry.params["found"] == 1
+    assert last_entry.params["method"] == "IQR"
+
+
+def test_handle_outliers_drop_writes_audit_entry():
+    session = DataSession(make_frame_for_outliers())
+
+    handle_outliers(session, "value", "drop")
+
+    last_entry = session.audit_log[-1]
+    assert last_entry.rows_before == 8
+    assert last_entry.rows_after == 7
+    assert last_entry.affected == 1
+    assert last_entry.params["bounds"] == (6.5, 20.5)
+
+
+def test_handle_outliers_unknown_action_raises_and_changes_nothing():
+    session = DataSession(make_frame_for_outliers())
+
+    with pytest.raises(ValidationError, match="Nieznana akcja"):
+        handle_outliers(session, "value", "remove_all")
+
+    assert len(session.current) == 8
+    assert len(session.audit_log) == 0
+
+
+def test_handle_outliers_on_text_column_raises():
+    session = DataSession(make_frame_for_outliers())
+
+    with pytest.raises(ValidationError, match="nie jest liczbowa"):
+        handle_outliers(session, "label", "flag")
+
+
+def test_handle_outliers_with_non_positive_factor_raises():
+    session = DataSession(make_frame_for_outliers())
+
+    with pytest.raises(ValidationError, match="dodatni"):
+        handle_outliers(session, "value", "flag", factor=0)
