@@ -8,6 +8,7 @@ import pandas as pd
 from studio.errors import ValidationError
 from studio.session import DataSession
 
+from matplotlib.figure import Figure
 
 def build_audit_report_text(session: DataSession) -> str:
     """Zwraca dziennik operacji jako tekst, jedna operacja w jednym wierszu."""
@@ -78,6 +79,28 @@ def save_cleaned_csv(session: DataSession, path: Path | str) -> Path:
 
     try:
         session.current.to_csv(path, index=False, encoding="utf-8")
+    except OSError as error:
+        raise ValidationError(
+            f"Nie można zapisać pliku {path} ({error}). "
+            "Sprawdź uprawnienia i czy folder istnieje."
+        ) from error
+
+    return path
+
+ALLOWED_FIGURE_EXTENSIONS = (".png", ".pdf", ".svg")
+
+def save_figure(figure: Figure, path: Path | str) -> Path:
+    """Zapisuje wykres do PNG, PDF albo SVG (zależnie od rozszerzenia)."""
+    path = Path(path)
+    extension = path.suffix.lower()
+
+    if extension not in ALLOWED_FIGURE_EXTENSIONS:
+        raise ValidationError(
+            f"Nieobsługiwane rozszerzenie '{extension}'. Użyj .png, .pdf albo .svg."
+        )
+
+    try:
+        figure.savefig(path)
     except OSError as error:
         raise ValidationError(
             f"Nie można zapisać pliku {path} ({error}). "
