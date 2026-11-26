@@ -64,3 +64,10 @@ def test_reset_restores_data_in_gui(app):
 
     assert app.session.current["score"].isna().sum() == 1
     assert len(app.log_table.get_children()) >= 2
+
+def test_preview_and_statistics_refresh(app):
+    load_frame(app)
+
+    assert len(app.preview_table.get_children()) == 4
+    assert list(app.preview_table["columns"]) == ["id", "score", "city"]
+    assert len(app.statistics_table.get_children()) == 2  # id i score

@@ -1,6 +1,7 @@
 """Interfejs graficzny. Nie zawiera logiki biznesowej, tylko wywołuje moduły studio."""
 from __future__ import annotations
 
+import pandas as pd
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -28,9 +29,12 @@ from studio.plots import (
 )
 
 from studio.errors import StudioError
-from studio.profiling import build_profile
+from studio.profiling import build_numeric_statistics, build_profile
 from studio.session import DataSession
 from studio.errors import StudioError, ValidationError
+
+PREVIEW_ROW_LIMIT = 100
+STATISTIC_NAMES = ("count", "mean", "std", "min", "25%", "50%", "75%", "max")
 
 class App:
     """Główne okno aplikacji. Cały stan sesji jest polem tego obiektu."""
@@ -86,13 +90,16 @@ class App:
         notebook.pack(side="top", fill="both", expand=True, padx=10, pady=5)
 
         data_tab = ttk.Frame(notebook, padding=5)
+        preview_tab = ttk.Frame(notebook, padding=5)
         plots_tab = ttk.Frame(notebook, padding=5)
         log_tab = ttk.Frame(notebook, padding=5)
         notebook.add(data_tab, text="Dane i czyszczenie")
+        notebook.add(preview_tab, text="Podgląd danych")
         notebook.add(plots_tab, text="Wykresy")
         notebook.add(log_tab, text="Dziennik zmian")
 
         self.build_data_tab(data_tab)
+        self.build_preview_tab(preview_tab)
         self.build_plots_tab(plots_tab)
         self.build_log_tab(log_tab)
 
@@ -174,13 +181,27 @@ class App:
         ttk.Label(profile_frame, textvariable=self.summary_text).pack(side="top", anchor="w", pady=(0, 5))
 
         column_names = ("column", "dtype", "missing", "missing_pct", "unique")
-        self.profile_table = ttk.Treeview(profile_frame, columns=column_names, show="headings", height=8)
+        self.profile_table = ttk.Treeview(profile_frame, columns=column_names, show="headings", height=5)
         self.profile_table.heading("column", text="Kolumna")
         self.profile_table.heading("dtype", text="Typ")
         self.profile_table.heading("missing", text="Braki")
         self.profile_table.heading("missing_pct", text="Braki %")
         self.profile_table.heading("unique", text="Unikalne")
         self.profile_table.pack(side="top", fill="both", expand=True)
+
+        statistics_frame = ttk.LabelFrame(parent, text="Statystyki opisowe (kolumny liczbowe)", padding=10)
+        statistics_frame.pack(side="top", fill="both", expand=True, pady=5)
+
+        statistics_columns = ("column",) + STATISTIC_NAMES
+        self.statistics_table = ttk.Treeview(
+            statistics_frame, columns=statistics_columns, show="headings", height=5
+        )
+        self.statistics_table.heading("column", text="Kolumna")
+        self.statistics_table.column("column", width=120)
+        for name in STATISTIC_NAMES:
+            self.statistics_table.heading(name, text=name)
+            self.statistics_table.column(name, width=80, anchor="e")
+        self.statistics_table.pack(side="top", fill="both", expand=True)
 
     def build_plots_tab(self, parent: ttk.Frame) -> None:
         plot_controls = ttk.Frame(parent)
@@ -324,6 +345,8 @@ class App:
 
     def refresh_all(self) -> None:
         self.refresh_profile()
+        self.refresh_statistics()
+        self.refresh_preview()
         self.refresh_column_choices()
         self.refresh_log()
 
@@ -614,6 +637,73 @@ class App:
             messagebox.showerror("Błąd zapisu", str(error))
             return
         self.status_text.set(f"Zapisano wykres: {saved.name}")
+
+    def build_preview_tab(self, parent: ttk.Frame) -> None:
+        self.preview_info_text = tk.StringVar(value="")
+        ttk.Label(parent, textvariable=self.preview_info_text).pack(side="top", anchor="w", pady=(0, 5))
+
+        table_frame = ttk.Frame(parent)
+        table_frame.pack(side="top", fill="both", expand=True)
+
+        self.preview_table = ttk.Treeview(table_frame, show="headings")
+        vertical_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.preview_table.yview)
+        horizontal_scroll = ttk.Scrollbar(table_frame, orient="horizontal", command=self.preview_table.xview)
+        self.preview_table.configure(
+            yscrollcommand=vertical_scroll.set, xscrollcommand=horizontal_scroll.set
+        )
+
+        vertical_scroll.pack(side="right", fill="y")
+        horizontal_scroll.pack(side="bottom", fill="x")
+        self.preview_table.pack(side="left", fill="both", expand=True)
+
+    def refresh_preview(self) -> None:
+        """Pokazuje pierwsze rekordy bieżących danych. Kolumny tworzone dynamicznie."""
+        for item_id in self.preview_table.get_children():
+            self.preview_table.delete(item_id)
+
+        if self.session is None:
+            self.preview_table["columns"] = ()
+            self.preview_info_text.set("")
+            return
+
+        frame = self.session.current
+        column_names = [str(name) for name in frame.columns]
+
+        self.preview_table["columns"] = column_names
+        for name in column_names:
+            self.preview_table.heading(name, text=name)
+            self.preview_table.column(name, width=110, anchor="w")
+
+        shown = frame.head(PREVIEW_ROW_LIMIT)
+        for _, row in shown.iterrows():
+            values = []
+            for value in row:
+                if pd.isna(value):
+                    values.append("")
+                else:
+                    values.append(str(value))
+            self.preview_table.insert("", "end", values=values)
+
+        self.preview_info_text.set(
+            f"Pokazano {len(shown)} z {len(frame)} rekordów (puste pole = brak wartości)."
+        )
+
+    def refresh_statistics(self) -> None:
+        for item_id in self.statistics_table.get_children():
+            self.statistics_table.delete(item_id)
+
+        if self.session is None:
+            return
+
+        statistics = build_numeric_statistics(self.session.current)
+        if statistics.empty:
+            return
+
+        for _, row in statistics.iterrows():
+            values = [row["column"]]
+            for name in STATISTIC_NAMES:
+                values.append(round(float(row[name]), 3))
+            self.statistics_table.insert("", "end", values=values)
 
 def run_app() -> None:
     root = tk.Tk()
