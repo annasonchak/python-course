@@ -21,3 +21,6 @@ Dalsze kroki są opisane w poszczególnych README.md projektów.
 
 * **[Projekt 1: Uniwersalny Konwerter Plików](./project-1-converter/README.md)** 
   Aplikacja z interfejsem graficznym (GUI Tkinter) do konwersji danych strukturalnych, dokumentów tekstowych i formatów biurowych (CSV, JSON, TXT, DOCX, ODT, PDF).
+
+* **[Projekt 2: Studio jakości i wizualizacji danych](./project-2-data-studio/README.md)** 
+  Aplikacja z interfejsem graficznym (GUI Tkinter) do wczytywania, profilowania, czyszczenia i wizualizacji danych z plików CSV (pandas, Matplotlib, Seaborn), z dziennikiem zmian i eksportem wyników (CSV, PNG, PDF, SVG).
