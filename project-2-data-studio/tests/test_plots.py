@@ -5,7 +5,14 @@ import pytest
 from matplotlib.figure import Figure
 
 from studio.errors import ValidationError
-from studio.plots import bar_figure, box_plot_figure, histogram_figure, scatter_figure
+from studio.plots import (
+    bar_figure,
+    box_plot_figure,
+    correlation_figure,
+    get_correlation_matrix,
+    histogram_figure,
+    scatter_figure,
+)
 from studio.session import DataSession
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -194,4 +201,57 @@ def test_scatter_and_bar_do_not_change_session_data():
     bar_figure(session, "region")
 
     assert session.current["age"].tolist() == [10, 20, 30, 40, 50]
+    assert len(session.audit_log) == 0
+
+def make_session_for_correlation() -> DataSession:
+    frame = pd.DataFrame({
+        "x": [1, 2, 3, 4, 5],
+        "double_x": [2, 4, 6, 8, 10],
+        "reverse_x": [5, 4, 3, 2, 1],
+        "constant": [3, 3, 3, 3, 3],
+        "label": ["a", "b", "c", "d", "e"],
+    })
+    return DataSession(frame)
+
+
+def test_correlation_matrix_has_expected_values():
+    matrix = get_correlation_matrix(make_session_for_correlation())
+
+    assert matrix.loc["x", "double_x"] == pytest.approx(1.0)
+    assert matrix.loc["x", "reverse_x"] == pytest.approx(-1.0)
+
+
+def test_correlation_matrix_skips_constant_and_text_columns():
+    matrix = get_correlation_matrix(make_session_for_correlation())
+
+    assert list(matrix.columns) == ["x", "double_x", "reverse_x"]
+
+
+def test_correlation_figure_has_title_labels_and_causation_warning():
+    figure = correlation_figure(make_session_for_correlation())
+    axes = figure.axes[0]
+
+    texts = []
+    for text in figure.texts:
+        texts.append(text.get_text())
+
+    assert isinstance(figure, Figure)
+    assert "korelacji" in axes.get_title()
+    assert axes.get_xlabel() != ""
+    assert any("przyczynowości" in text for text in texts)
+
+
+def test_correlation_blocked_with_fewer_than_two_numeric_columns():
+    session = DataSession(pd.DataFrame({"x": [1, 2, 3], "label": ["a", "b", "c"]}))
+
+    with pytest.raises(ValidationError, match="co najmniej dwie"):
+        correlation_figure(session)
+
+
+def test_correlation_does_not_change_session_data():
+    session = make_session_for_correlation()
+
+    correlation_figure(session)
+
+    assert session.current["x"].tolist() == [1, 2, 3, 4, 5]
     assert len(session.audit_log) == 0
