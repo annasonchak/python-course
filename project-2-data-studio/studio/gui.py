@@ -6,6 +6,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from studio.reporting import save_audit_report, save_cleaned_csv, save_figure
 
 from studio.cleaning import (
     apply_range_rule,
@@ -73,6 +74,9 @@ class App:
 
         file_label = ttk.Label(top_frame, textvariable=self.file_text)
         file_label.pack(side="left", padx=10)
+
+        ttk.Button(top_frame, text="Zapisz CSV", command=self.on_save_csv).pack(side="left", padx=5)
+        ttk.Button(top_frame, text="Zapisz raport", command=self.on_save_report).pack(side="left", padx=5)
 
         status_bar = ttk.Label(self.root, textvariable=self.status_text, relief="sunken", anchor="w")
         status_bar.pack(side="bottom", fill="x")
@@ -205,6 +209,10 @@ class App:
 
         ttk.Button(plot_controls, text="Rysuj wykres", command=self.on_draw_plot).pack(
             side="left", padx=10
+        )
+
+        ttk.Button(plot_controls, text="Zapisz wykres", command=self.on_save_plot).pack(
+            side="left", padx=5
         )
 
         self.plot_area = ttk.Frame(parent)
@@ -551,6 +559,61 @@ class App:
 
         self.show_figure(figure)
         self.status_text.set(f"Narysowano wykres: {self.plot_type_choice.get()}.")
+
+    def on_save_csv(self) -> None:
+        if not self.require_session():
+            return
+        path_text = filedialog.asksaveasfilename(
+            title="Zapisz oczyszczony CSV",
+            defaultextension=".csv",
+            initialfile="cleaned.csv",
+            filetypes=[("Pliki CSV", "*.csv")],
+        )
+        if path_text == "":
+            return
+        try:
+            saved = save_cleaned_csv(self.session, path_text)
+        except StudioError as error:
+            messagebox.showerror("Błąd zapisu", str(error))
+            return
+        self.status_text.set(f"Zapisano dane: {saved.name}")
+
+    def on_save_report(self) -> None:
+        if not self.require_session():
+            return
+        path_text = filedialog.asksaveasfilename(
+            title="Zapisz raport zmian",
+            defaultextension=".txt",
+            initialfile="audit_report.txt",
+            filetypes=[("Tekst", "*.txt"), ("CSV", "*.csv")],
+        )
+        if path_text == "":
+            return
+        try:
+            saved = save_audit_report(self.session, path_text)
+        except StudioError as error:
+            messagebox.showerror("Błąd zapisu", str(error))
+            return
+        self.status_text.set(f"Zapisano raport: {saved.name}")
+
+    def on_save_plot(self) -> None:
+        if self.current_figure is None:
+            messagebox.showwarning("Brak wykresu", "Najpierw narysuj wykres.")
+            return
+        path_text = filedialog.asksaveasfilename(
+            title="Zapisz wykres",
+            defaultextension=".png",
+            initialfile="wykres.png",
+            filetypes=[("PNG", "*.png"), ("PDF", "*.pdf"), ("SVG", "*.svg")],
+        )
+        if path_text == "":
+            return
+        try:
+            saved = save_figure(self.current_figure, path_text)
+        except StudioError as error:
+            messagebox.showerror("Błąd zapisu", str(error))
+            return
+        self.status_text.set(f"Zapisano wykres: {saved.name}")
 
 def run_app() -> None:
     root = tk.Tk()
