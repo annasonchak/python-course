@@ -3,14 +3,15 @@ import pytest
 
 from studio.cleaning import drop_exact_duplicates
 from studio.errors import ValidationError
+from studio.plots import histogram_figure
 from studio.reporting import (
     build_audit_report_text,
     build_audit_table,
     save_audit_report,
     save_cleaned_csv,
+    save_figure,
 )
 from studio.session import DataSession
-
 
 def make_session_with_operation() -> DataSession:
     frame = pd.DataFrame({
@@ -79,3 +80,25 @@ def test_save_to_missing_folder_raises_validation_error(tmp_path):
 
     with pytest.raises(ValidationError, match="Nie można zapisać"):
         save_cleaned_csv(session, tmp_path / "nie_ma_folderu" / "cleaned.csv")
+
+def make_figure():
+    session = DataSession(pd.DataFrame({"x": [1, 2, 3, 4, 10]}))
+    return histogram_figure(session, "x")
+
+
+def test_save_figure_png_pdf_svg_are_not_empty(tmp_path):
+    figure = make_figure()
+
+    for name in ["w.png", "w.pdf", "w.svg"]:
+        saved = save_figure(figure, tmp_path / name)
+        assert saved.stat().st_size > 0
+
+
+def test_save_figure_unknown_extension_raises(tmp_path):
+    with pytest.raises(ValidationError, match="Nieobsługiwane rozszerzenie"):
+        save_figure(make_figure(), tmp_path / "w.bmp")
+
+
+def test_save_figure_to_missing_folder_raises(tmp_path):
+    with pytest.raises(ValidationError, match="Nie można zapisać"):
+        save_figure(make_figure(), tmp_path / "nie_ma" / "w.png")
