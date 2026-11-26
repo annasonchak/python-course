@@ -4,3 +4,6 @@ __pycache__/
 .pytest_cache/
 
 output/
+
+venv/
+project-2-data-studio/data/california_housing_z_problemami.csv

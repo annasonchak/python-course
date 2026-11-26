@@ -1,0 +1,11 @@
+RAPORT ZMIAN
+========================================
+Plik źródłowy: /home/shadowprice/Documents/Development/Python/python-course/project-2-data-studio/data/test_04_zakres_outlier.csv
+Rekordy w danych surowych: 8
+Rekordy w danych bieżących: 8
+
+1. [2026-11-26T21:51:01] drop_exact_duplicates {'keep': 'first'} | rekordy: 8 -> 8 | dotknięte: 0
+2. [2026-11-26T21:51:01] fill_missing_with_statistic {'columns': ['HouseAge'], 'strategy': 'median'} | rekordy: 8 -> 8 | dotknięte: 0
+3. [2026-11-26T21:51:01] apply_range_rule {'column': 'HouseAge', 'minimum': 0, 'maximum': 100, 'action': 'to_missing'} | rekordy: 8 -> 8 | dotknięte: 1
+4. [2026-11-26T21:51:01] fill_missing_with_statistic {'columns': ['HouseAge'], 'strategy': 'median'} | rekordy: 8 -> 8 | dotknięte: 1
+5. [2026-11-26T21:51:01] handle_outliers {'column': 'AveRooms', 'method': 'IQR', 'factor': 1.5, 'bounds': (1.625, 10.625), 'action': 'clip', 'found': 1} | rekordy: 8 -> 8 | dotknięte: 1
