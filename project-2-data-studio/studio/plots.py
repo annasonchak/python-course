@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import seaborn as sns
 from matplotlib.figure import Figure
 
 from studio.errors import ValidationError
@@ -134,4 +135,49 @@ def bar_figure(session: DataSession, column_name: str) -> Figure:
     axes.set_xlabel(column_name)
     axes.set_ylabel("Liczba rekordów")
     figure.tight_layout()
+    return figure
+
+def get_correlation_matrix(session: DataSession) -> pd.DataFrame:
+    """Zwraca macierz korelacji Pearsona dla kolumn liczbowych (bez stałych)."""
+    numeric_frame = session.current.select_dtypes(include="number")
+
+    usable_columns = []
+    for column_name in numeric_frame.columns:
+        if numeric_frame[column_name].nunique(dropna=True) >= 2:
+            usable_columns.append(column_name)
+
+    if len(usable_columns) < 2:
+        raise ValidationError(
+            "Do korelacji potrzebne są co najmniej dwie liczbowe kolumny, "
+            "które nie są stałe. Wczytaj plik z większą liczbą kolumn liczbowych."
+        )
+
+    return numeric_frame[usable_columns].corr()
+
+
+def correlation_figure(session: DataSession) -> Figure:
+    """Mapa cieplna korelacji między kolumnami liczbowymi."""
+    matrix = get_correlation_matrix(session)
+    size = len(matrix.columns)
+
+    figure = Figure(figsize=(max(6, size * 0.9), max(5, size * 0.8)), dpi=100)
+    axes = figure.add_subplot(1, 1, 1)
+    sns.heatmap(
+        matrix,
+        ax=axes,
+        annot=True,
+        fmt=".2f",
+        vmin=-1,
+        vmax=1,
+        cmap="coolwarm",
+    )
+    axes.set_title("Macierz korelacji (Pearson)")
+    axes.set_xlabel("Kolumna")
+    axes.set_ylabel("Kolumna")
+    figure.text(
+        0.5, 0.01,
+        "Uwaga: korelacja nie oznacza przyczynowości.",
+        ha="center", fontsize=8,
+    )
+    figure.tight_layout(rect=(0, 0.04, 1, 1))
     return figure
