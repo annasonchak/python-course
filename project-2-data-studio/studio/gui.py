@@ -29,7 +29,7 @@ class App:
         self.session: DataSession | None = None
 
         self.root.title("Studio jakości i wizualizacji danych")
-        self.root.geometry("900x600")
+        self.root.geometry("1000x800")
 
         self.status_text = tk.StringVar(value="Wybierz plik CSV, aby rozpocząć.")
         self.file_text = tk.StringVar(value="Brak wczytanego pliku")
@@ -136,6 +136,25 @@ class App:
         profile_frame = ttk.LabelFrame(self.root, text="Profil danych", padding=10)
         profile_frame.pack(side="top", fill="both", expand=True, padx=10, pady=5)
 
+        log_frame = ttk.LabelFrame(self.root, text="Dziennik zmian", padding=10)
+        log_frame.pack(side="top", fill="both", expand=True, padx=10, pady=5)
+
+        log_columns = ("time", "operation", "params", "before", "after", "affected")
+        self.log_table = ttk.Treeview(log_frame, columns=log_columns, show="headings", height=5)
+        self.log_table.heading("time", text="Czas")
+        self.log_table.heading("operation", text="Operacja")
+        self.log_table.heading("params", text="Parametry")
+        self.log_table.heading("before", text="Przed")
+        self.log_table.heading("after", text="Po")
+        self.log_table.heading("affected", text="Dotknięte")
+        self.log_table.column("time", width=130)
+        self.log_table.column("operation", width=170)
+        self.log_table.column("params", width=320)
+        self.log_table.column("before", width=60, anchor="e")
+        self.log_table.column("after", width=60, anchor="e")
+        self.log_table.column("affected", width=80, anchor="e")
+        self.log_table.pack(side="top", fill="both", expand=True)
+
         summary_label = ttk.Label(profile_frame, textvariable=self.summary_text)
         summary_label.pack(side="top", anchor="w", pady=(0, 5))
 
@@ -217,6 +236,7 @@ class App:
     def refresh_all(self) -> None:
         self.refresh_profile()
         self.refresh_column_choices()
+        self.refresh_log()
 
     def require_session(self) -> bool:
         if self.session is None:
@@ -308,6 +328,8 @@ class App:
             f"Reguła zakresu: znaleziono {found_count} wartości poza zakresem. Dane bez zmian."
         )
 
+        self.refresh_log()
+
     def on_apply_range(self) -> None:
         if not self.require_session():
             return
@@ -373,6 +395,28 @@ class App:
             f"IQR ({action}): znaleziono {found_count} wartości odstających."
         )
         self.refresh_all()
+
+    def refresh_log(self) -> None:
+        """Czyści tabelę dziennika i wypełnia ją wpisami z sesji."""
+        for item_id in self.log_table.get_children():
+            self.log_table.delete(item_id)
+
+        if self.session is None:
+            return
+
+        for entry in self.session.audit_log:
+            self.log_table.insert(
+                "",
+                "end",
+                values=(
+                    entry.timestamp,
+                    entry.operation,
+                    str(entry.params),
+                    entry.rows_before,
+                    entry.rows_after,
+                    entry.affected,
+                ),
+            )
 
 def run_app() -> None:
     root = tk.Tk()
