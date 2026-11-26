@@ -5,7 +5,7 @@ import pytest
 from matplotlib.figure import Figure
 
 from studio.errors import ValidationError
-from studio.plots import box_plot_figure, histogram_figure
+from studio.plots import bar_figure, box_plot_figure, histogram_figure, scatter_figure
 from studio.session import DataSession
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -112,3 +112,86 @@ def test_plots_on_file_test_06_block_constant_and_text_columns():
         box_plot_figure(session, "label")
 
     assert isinstance(histogram_figure(session, "id"), Figure)
+
+def make_session_for_pairs() -> DataSession:
+    frame = pd.DataFrame({
+        "age": [10, 20, 30, 40, 50],
+        "rooms": [3.0, 4.0, None, 6.0, 8.0],
+        "region": ["A", "B", "A", "C", "A"],
+        "constant": [1, 1, 1, 1, 1],
+    })
+    return DataSession(frame)
+
+
+def test_scatter_returns_figure_with_title_and_axis_labels():
+    figure = scatter_figure(make_session_for_pairs(), "age", "rooms")
+    axes = figure.axes[0]
+
+    assert isinstance(figure, Figure)
+    assert "age" in axes.get_title() and "rooms" in axes.get_title()
+    assert axes.get_xlabel() == "age"
+    assert axes.get_ylabel() == "rooms"
+
+
+def test_scatter_skips_rows_with_missing_values():
+    figure = scatter_figure(make_session_for_pairs(), "age", "rooms")
+    axes = figure.axes[0]
+
+    point_count = len(axes.collections[0].get_offsets())
+
+    assert point_count == 4
+
+
+def test_scatter_blocks_same_column_text_and_constant():
+    session = make_session_for_pairs()
+
+    with pytest.raises(ValidationError, match="tę samą kolumnę"):
+        scatter_figure(session, "age", "age")
+    with pytest.raises(ValidationError, match="nie jest liczbowa"):
+        scatter_figure(session, "age", "region")
+    with pytest.raises(ValidationError, match="stała"):
+        scatter_figure(session, "age", "constant")
+
+
+def test_bar_returns_figure_with_correct_counts():
+    figure = bar_figure(make_session_for_pairs(), "region")
+    axes = figure.axes[0]
+
+    heights = []
+    for bar in axes.patches:
+        heights.append(bar.get_height())
+
+    assert isinstance(figure, Figure)
+    assert heights == [3, 1, 1]
+    assert axes.get_xlabel() == "region"
+    assert axes.get_ylabel() != ""
+
+
+def test_bar_blocks_numeric_column():
+    with pytest.raises(ValidationError, match="jest liczbowa"):
+        bar_figure(make_session_for_pairs(), "age")
+
+
+def test_bar_blocks_too_many_categories():
+    names = []
+    for number in range(30):
+        names.append(f"kategoria_{number}")
+    session = DataSession(pd.DataFrame({"name": names}))
+
+    with pytest.raises(ValidationError, match="limit"):
+        bar_figure(session, "name")
+
+
+def test_bar_blocks_unknown_column():
+    with pytest.raises(ValidationError, match="nie istnieje"):
+        bar_figure(make_session_for_pairs(), "nie_ma")
+
+
+def test_scatter_and_bar_do_not_change_session_data():
+    session = make_session_for_pairs()
+
+    scatter_figure(session, "age", "rooms")
+    bar_figure(session, "region")
+
+    assert session.current["age"].tolist() == [10, 20, 30, 40, 50]
+    assert len(session.audit_log) == 0
