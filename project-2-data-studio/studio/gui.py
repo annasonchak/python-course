@@ -4,6 +4,8 @@ from __future__ import annotations
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
 from studio.cleaning import (
     apply_range_rule,
@@ -14,6 +16,14 @@ from studio.cleaning import (
     find_outliers_iqr,
     handle_outliers,
     report_out_of_range,
+)
+
+from studio.plots import (
+    bar_figure,
+    box_plot_figure,
+    correlation_figure,
+    histogram_figure,
+    scatter_figure,
 )
 
 from studio.errors import StudioError
@@ -29,7 +39,7 @@ class App:
         self.session: DataSession | None = None
 
         self.root.title("Studio jakości i wizualizacji danych")
-        self.root.geometry("1000x800")
+        self.root.geometry("1100x950")
 
         self.status_text = tk.StringVar(value="Wybierz plik CSV, aby rozpocząć.")
         self.file_text = tk.StringVar(value="Brak wczytanego pliku")
@@ -45,9 +55,16 @@ class App:
         self.iqr_factor_text = tk.StringVar(value="1.5")
         self.outlier_action_choice = tk.StringVar(value="flag")
 
+        self.plot_type_choice = tk.StringVar(value="histogram")
+        self.plot_x_choice = tk.StringVar(value="")
+        self.plot_y_choice = tk.StringVar(value="")
+        self.current_figure: Figure | None = None
+        self.plot_canvas: FigureCanvasTkAgg | None = None
+
         self.build_widgets()
 
     def build_widgets(self) -> None:
+        # --- Górny pasek i pasek statusu (poza zakładkami) ---
         top_frame = ttk.Frame(self.root, padding=10)
         top_frame.pack(side="top", fill="x")
 
@@ -60,47 +77,59 @@ class App:
         status_bar = ttk.Label(self.root, textvariable=self.status_text, relief="sunken", anchor="w")
         status_bar.pack(side="bottom", fill="x")
 
-        cleaning_frame = ttk.LabelFrame(self.root, text="Czyszczenie", padding=10)
-        cleaning_frame.pack(side="top", fill="x", padx=10, pady=5)
+        # --- Zakładki ---
+        notebook = ttk.Notebook(self.root)
+        notebook.pack(side="top", fill="both", expand=True, padx=10, pady=5)
 
-        duplicates_button = ttk.Button(
+        data_tab = ttk.Frame(notebook, padding=5)
+        plots_tab = ttk.Frame(notebook, padding=5)
+        log_tab = ttk.Frame(notebook, padding=5)
+        notebook.add(data_tab, text="Dane i czyszczenie")
+        notebook.add(plots_tab, text="Wykresy")
+        notebook.add(log_tab, text="Dziennik zmian")
+
+        self.build_data_tab(data_tab)
+        self.build_plots_tab(plots_tab)
+        self.build_log_tab(log_tab)
+
+    def build_data_tab(self, parent: ttk.Frame) -> None:
+        cleaning_frame = ttk.LabelFrame(parent, text="Czyszczenie", padding=10)
+        cleaning_frame.pack(side="top", fill="x", pady=5)
+
+        ttk.Button(
             cleaning_frame, text="Usuń duplikaty", command=self.on_drop_duplicates
-        )
-        duplicates_button.grid(row=0, column=0, padx=5, pady=2)
+        ).grid(row=0, column=0, padx=5, pady=2)
+        ttk.Button(
+            cleaning_frame, text="Resetuj dane", command=self.on_reset
+        ).grid(row=0, column=1, padx=5, pady=2)
 
-        reset_button = ttk.Button(cleaning_frame, text="Resetuj dane", command=self.on_reset)
-        reset_button.grid(row=0, column=1, padx=5, pady=2)
-
-        column_label = ttk.Label(cleaning_frame, text="Kolumna:")
-        column_label.grid(row=1, column=0, sticky="e", padx=5, pady=2)
+        ttk.Label(cleaning_frame, text="Kolumna:").grid(row=1, column=0, sticky="e", padx=5, pady=2)
         self.column_combo = ttk.Combobox(
             cleaning_frame, textvariable=self.column_choice, state="readonly", width=20
         )
         self.column_combo.grid(row=1, column=1, padx=5, pady=2)
 
-        strategy_label = ttk.Label(cleaning_frame, text="Strategia braków:")
-        strategy_label.grid(row=1, column=2, sticky="e", padx=5, pady=2)
-        strategy_combo = ttk.Combobox(
+        ttk.Label(cleaning_frame, text="Strategia braków:").grid(row=1, column=2, sticky="e", padx=5, pady=2)
+        ttk.Combobox(
             cleaning_frame,
             textvariable=self.strategy_choice,
             values=["drop", "constant", "mean", "median", "mode"],
             state="readonly",
             width=12,
+        ).grid(row=1, column=3, padx=5, pady=2)
+
+        ttk.Label(cleaning_frame, text="Stała:").grid(row=1, column=4, sticky="e", padx=5, pady=2)
+        ttk.Entry(cleaning_frame, textvariable=self.constant_text, width=10).grid(
+            row=1, column=5, padx=5, pady=2
         )
-        strategy_combo.grid(row=1, column=3, padx=5, pady=2)
-
-        constant_label = ttk.Label(cleaning_frame, text="Stała:")
-        constant_label.grid(row=1, column=4, sticky="e", padx=5, pady=2)
-        constant_entry = ttk.Entry(cleaning_frame, textvariable=self.constant_text, width=10)
-        constant_entry.grid(row=1, column=5, padx=5, pady=2)
-
-        missing_button = ttk.Button(
+        ttk.Button(
             cleaning_frame, text="Uzupełnij braki", command=self.on_handle_missing
-        )
-        missing_button.grid(row=1, column=6, padx=5, pady=2)
+        ).grid(row=1, column=6, padx=5, pady=2)
 
-        range_frame = ttk.LabelFrame(self.root, text="Reguła zakresu (dla kolumny wybranej wyżej)", padding=10)
-        range_frame.pack(side="top", fill="x", padx=10, pady=5)
+        range_frame = ttk.LabelFrame(
+            parent, text="Reguła zakresu (dla kolumny wybranej wyżej)", padding=10
+        )
+        range_frame.pack(side="top", fill="x", pady=5)
 
         ttk.Label(range_frame, text="Minimum:").grid(row=0, column=0, padx=5, pady=2)
         ttk.Entry(range_frame, textvariable=self.minimum_text, width=10).grid(row=0, column=1, padx=5)
@@ -117,8 +146,10 @@ class App:
         ttk.Button(range_frame, text="Sprawdź", command=self.on_check_range).grid(row=0, column=6, padx=5)
         ttk.Button(range_frame, text="Zastosuj", command=self.on_apply_range).grid(row=0, column=7, padx=5)
 
-        outlier_frame = ttk.LabelFrame(self.root, text="Wartości odstające IQR (dla kolumny wybranej wyżej)", padding=10)
-        outlier_frame.pack(side="top", fill="x", padx=10, pady=5)
+        outlier_frame = ttk.LabelFrame(
+            parent, text="Wartości odstające IQR (dla kolumny wybranej wyżej)", padding=10
+        )
+        outlier_frame.pack(side="top", fill="x", pady=5)
 
         ttk.Label(outlier_frame, text="Współczynnik:").grid(row=0, column=0, padx=5, pady=2)
         ttk.Entry(outlier_frame, textvariable=self.iqr_factor_text, width=8).grid(row=0, column=1, padx=5)
@@ -133,14 +164,55 @@ class App:
         ttk.Button(outlier_frame, text="Sprawdź", command=self.on_check_outliers).grid(row=0, column=4, padx=5)
         ttk.Button(outlier_frame, text="Zastosuj", command=self.on_apply_outliers).grid(row=0, column=5, padx=5)
 
-        profile_frame = ttk.LabelFrame(self.root, text="Profil danych", padding=10)
-        profile_frame.pack(side="top", fill="both", expand=True, padx=10, pady=5)
+        profile_frame = ttk.LabelFrame(parent, text="Profil danych", padding=10)
+        profile_frame.pack(side="top", fill="both", expand=True, pady=5)
 
-        log_frame = ttk.LabelFrame(self.root, text="Dziennik zmian", padding=10)
-        log_frame.pack(side="top", fill="both", expand=True, padx=10, pady=5)
+        ttk.Label(profile_frame, textvariable=self.summary_text).pack(side="top", anchor="w", pady=(0, 5))
 
+        column_names = ("column", "dtype", "missing", "missing_pct", "unique")
+        self.profile_table = ttk.Treeview(profile_frame, columns=column_names, show="headings", height=8)
+        self.profile_table.heading("column", text="Kolumna")
+        self.profile_table.heading("dtype", text="Typ")
+        self.profile_table.heading("missing", text="Braki")
+        self.profile_table.heading("missing_pct", text="Braki %")
+        self.profile_table.heading("unique", text="Unikalne")
+        self.profile_table.pack(side="top", fill="both", expand=True)
+
+    def build_plots_tab(self, parent: ttk.Frame) -> None:
+        plot_controls = ttk.Frame(parent)
+        plot_controls.pack(side="top", fill="x", pady=5)
+
+        ttk.Label(plot_controls, text="Typ:").pack(side="left", padx=5)
+        ttk.Combobox(
+            plot_controls,
+            textvariable=self.plot_type_choice,
+            values=["histogram", "box", "scatter", "bar", "correlation"],
+            state="readonly",
+            width=12,
+        ).pack(side="left", padx=5)
+
+        ttk.Label(plot_controls, text="Kolumna X:").pack(side="left", padx=5)
+        self.plot_x_combo = ttk.Combobox(
+            plot_controls, textvariable=self.plot_x_choice, state="readonly", width=18
+        )
+        self.plot_x_combo.pack(side="left", padx=5)
+
+        ttk.Label(plot_controls, text="Oś Y (scatter):").pack(side="left", padx=5)
+        self.plot_y_combo = ttk.Combobox(
+            plot_controls, textvariable=self.plot_y_choice, state="readonly", width=18
+        )
+        self.plot_y_combo.pack(side="left", padx=5)
+
+        ttk.Button(plot_controls, text="Rysuj wykres", command=self.on_draw_plot).pack(
+            side="left", padx=10
+        )
+
+        self.plot_area = ttk.Frame(parent)
+        self.plot_area.pack(side="top", fill="both", expand=True)
+
+    def build_log_tab(self, parent: ttk.Frame) -> None:
         log_columns = ("time", "operation", "params", "before", "after", "affected")
-        self.log_table = ttk.Treeview(log_frame, columns=log_columns, show="headings", height=5)
+        self.log_table = ttk.Treeview(parent, columns=log_columns, show="headings")
         self.log_table.heading("time", text="Czas")
         self.log_table.heading("operation", text="Operacja")
         self.log_table.heading("params", text="Parametry")
@@ -149,24 +221,12 @@ class App:
         self.log_table.heading("affected", text="Dotknięte")
         self.log_table.column("time", width=130)
         self.log_table.column("operation", width=170)
-        self.log_table.column("params", width=320)
+        self.log_table.column("params", width=420)
         self.log_table.column("before", width=60, anchor="e")
         self.log_table.column("after", width=60, anchor="e")
         self.log_table.column("affected", width=80, anchor="e")
         self.log_table.pack(side="top", fill="both", expand=True)
-
-        summary_label = ttk.Label(profile_frame, textvariable=self.summary_text)
-        summary_label.pack(side="top", anchor="w", pady=(0, 5))
-
-        column_names = ("column", "dtype", "missing", "missing_pct", "unique")
-        self.profile_table = ttk.Treeview(profile_frame, columns=column_names, show="headings", height=10)
-        self.profile_table.heading("column", text="Kolumna")
-        self.profile_table.heading("dtype", text="Typ")
-        self.profile_table.heading("missing", text="Braki")
-        self.profile_table.heading("missing_pct", text="Braki %")
-        self.profile_table.heading("unique", text="Unikalne")
-        self.profile_table.pack(side="top", fill="both", expand=True)
-
+        
     def on_open_file(self) -> None:
         path_text = filedialog.askopenfilename(
             title="Wybierz plik CSV",
@@ -187,6 +247,7 @@ class App:
         row_count = len(new_session.raw)
         column_count = len(new_session.raw.columns)
         self.status_text.set(f"Wczytano {row_count} rekordów i {column_count} kolumn.")
+        self.clear_plot()
         self.refresh_all()
 
     def refresh_profile(self) -> None:
@@ -218,20 +279,40 @@ class App:
             )
 
     def refresh_column_choices(self) -> None:
-        """Odświeża listę kolumn po zmianie zbioru danych."""
+        """Odświeża listy kolumn po zmianie zbioru danych."""
         if self.session is None:
             self.column_combo["values"] = []
             self.column_choice.set("")
+            self.plot_x_combo["values"] = []
+            self.plot_x_choice.set("")
+            self.plot_y_combo["values"] = []
+            self.plot_y_choice.set("")
             return
 
         column_names = list(self.session.current.columns)
         self.column_combo["values"] = column_names
+        self.plot_x_combo["values"] = column_names
+        self.plot_y_combo["values"] = column_names
 
         if self.column_choice.get() not in column_names:
             if len(column_names) > 0:
                 self.column_choice.set(column_names[0])
             else:
                 self.column_choice.set("")
+
+        if self.plot_x_choice.get() not in column_names:
+            if len(column_names) > 0:
+                self.plot_x_choice.set(column_names[0])
+            else:
+                self.plot_x_choice.set("")
+
+        if self.plot_y_choice.get() not in column_names:
+            if len(column_names) > 1:
+                self.plot_y_choice.set(column_names[1])
+            elif len(column_names) > 0:
+                self.plot_y_choice.set(column_names[0])
+            else:
+                self.plot_y_choice.set("")
 
     def refresh_all(self) -> None:
         self.refresh_profile()
@@ -417,6 +498,59 @@ class App:
                     entry.affected,
                 ),
             )
+
+    def build_figure(self) -> Figure:
+        """Wybiera funkcję wykresu na podstawie wyboru użytkownika."""
+        plot_type = self.plot_type_choice.get()
+        x_column = self.plot_x_choice.get()
+        y_column = self.plot_y_choice.get()
+
+        if plot_type == "correlation":
+            return correlation_figure(self.session)
+
+        if x_column == "":
+            raise ValidationError("Nie wybrano kolumny. Wybierz kolumnę z listy 'Kolumna X'.")
+
+        if plot_type == "histogram":
+            return histogram_figure(self.session, x_column)
+        if plot_type == "box":
+            return box_plot_figure(self.session, x_column)
+        if plot_type == "bar":
+            return bar_figure(self.session, x_column)
+        if plot_type == "scatter":
+            return scatter_figure(self.session, x_column, y_column)
+
+        raise ValidationError(f"Nieznany typ wykresu '{plot_type}'.")
+
+    def show_figure(self, figure: Figure) -> None:
+        """Osadza wykres w oknie i usuwa poprzedni canvas."""
+        self.clear_plot()
+
+        canvas = FigureCanvasTkAgg(figure, master=self.plot_area)
+        canvas.draw()
+        canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+
+        self.current_figure = figure
+        self.plot_canvas = canvas
+
+    def clear_plot(self) -> None:
+        if self.plot_canvas is not None:
+            self.plot_canvas.get_tk_widget().destroy()
+        self.plot_canvas = None
+        self.current_figure = None
+
+    def on_draw_plot(self) -> None:
+        if not self.require_session():
+            return
+        try:
+            figure = self.build_figure()
+        except StudioError as error:
+            messagebox.showerror("Nie można narysować wykresu", str(error))
+            self.status_text.set("Wykres zablokowany: niepoprawny wybór kolumn.")
+            return
+
+        self.show_figure(figure)
+        self.status_text.set(f"Narysowano wykres: {self.plot_type_choice.get()}.")
 
 def run_app() -> None:
     root = tk.Tk()
